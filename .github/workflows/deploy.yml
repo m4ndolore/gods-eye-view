@@ -1,0 +1,165 @@
+name: Deploy
+
+# ONE workflow, two very different hosts. Pick per run.
+#
+#   pages    a public static build on GitHub Pages.
+#   homelab  a self-hosted build on the Mac mini (M4), served on your network.
+#
+# THE DIFFERENCE IS NOT COSMETIC, so it is written down here rather than
+# discovered after a deploy:
+#
+#   1. KEYS. GOOGLE_MAPS_API_KEY is REQUIRED AT RUNTIME — src/main.js throws
+#      'GOOGLE_MAPS_API_KEY not found' and the app never initializes without it.
+#      A keyless build still compiles; it just publishes a page that can only
+#      show that error, which is why the Pages job below refuses to deploy one.
+#      The key is compiled INTO the browser bundle by design (vite.config.js
+#      `define`) and is visible in devtools wherever the bundle is served. On the
+#      homelab that bundle never leaves your machine. On Pages it is
+#      world-readable, so opting in is explicit and the key must be
+#      HTTP-referrer and API restricted in Google Cloud first, with a billing
+#      budget set. See SECURITY.md.
+#
+#   2. SERVER ROUTES. A large part of this app's live data rides Vite plugin
+#      middleware (the /api/* proxies for CCTV, radio, regional briefs, Places,
+#      terrain heights and friends). A STATIC Pages deploy has none of them:
+#      those layers degrade to their unavailable/fallback states, which the app
+#      labels honestly but which is a real reduction in capability. `vite
+#      preview` on the homelab keeps the subset of those routes that register a
+#      preview hook; `npm run dev` keeps all of them.
+#
+# So: Pages is a shareable demo of the globe and the Oahu framing, and it costs
+# a publicly readable Maps key to have one at all. The homelab Mac mini is where
+# the dead-reckon problem set actually runs end to end, with the key staying on
+# your own hardware.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to deploy
+        type: choice
+        required: true
+        default: pages
+        options: [pages, homelab, both]
+      base:
+        description: 'Public base path for the Pages build (repo subpath by default; use / for a custom domain)'
+        type: string
+        required: false
+        default: ''
+      include_maps_key:
+        description: 'Pages only — bake GOOGLE_MAPS_API_KEY into the PUBLIC bundle. Required for the page to work at all; the key must be referrer- and API-restricted first.'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  pages:
+    name: Public build (GitHub Pages)
+    if: inputs.target == 'pages' || inputs.target == 'both'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Validate the Hawaii problem set
+        run: npm run hawaii:validate
+
+      - name: Unit tests
+        run: npm test
+
+      - uses: actions/configure-pages@v5
+
+      - name: Refuse to publish a page that cannot start
+        # The app THROWS without GOOGLE_MAPS_API_KEY — a keyless deploy is not a
+        # degraded globe, it is a public URL that renders one error message. So
+        # this fails here, loudly, rather than shipping that and calling it done.
+        env:
+          MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          echo "::notice::Static Pages build: the /api/* Vite middleware routes are NOT present, so the layers that ride them stay unavailable."
+          if [ "${{ inputs.include_maps_key }}" != "true" ]; then
+            echo "::error::Pages needs include_maps_key. Without GOOGLE_MAPS_API_KEY the app throws on startup and the published page shows only that error. Restrict the key by HTTP referrer and API in Google Cloud, set a billing budget, then re-run with the box ticked."
+            exit 1
+          fi
+          if [ -z "$MAPS_KEY" ]; then
+            echo "::error::include_maps_key is set but the GOOGLE_MAPS_API_KEY repository secret is empty."
+            exit 1
+          fi
+          echo "::warning::GOOGLE_MAPS_API_KEY is being compiled into a PUBLIC, world-readable bundle. Confirm it is HTTP-referrer and API restricted with a billing budget set."
+
+      - name: Build
+        env:
+          # The gate above has already established that this is opted in and
+          # non-empty; a keyless build never reaches this step.
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          BASE="${{ inputs.base }}"
+          if [ -z "$BASE" ]; then BASE="/${{ github.event.repository.name }}/"; fi
+          echo "Building with base $BASE"
+          npm run build -- --base "$BASE"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  homelab:
+    name: Homelab build (Mac mini M4)
+    if: inputs.target == 'homelab' || inputs.target == 'both'
+    # Label your Mac mini's runner with `gev-homelab` so this cannot land on
+    # some other self-hosted machine that happens to be macOS/ARM64.
+    runs-on: [self-hosted, macOS, ARM64, gev-homelab]
+    steps:
+      - uses: actions/checkout@v4
+
+      # No setup-node here on purpose: a self-hosted runner uses the Node you
+      # installed on the box, and silently swapping it under a long-lived
+      # machine is how a homelab drifts from what you tested.
+      - name: Show the runtime this box will build with
+        run: node -v && npm -v
+
+      - run: npm ci
+
+      - name: Validate the Hawaii problem set
+        run: npm run hawaii:validate
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        # Keys come from the RUNNER's own environment or the repo checkout's
+        # .env — never from workflow inputs, and never echoed. On this box the
+        # bundle does not leave the network it is served on.
+        run: npm run build
+
+      - name: Stage the release
+        # Atomic swap plus an optional launchd restart; see the script and
+        # docs/HAWAII-DEAD-RECKON.md for the LaunchAgent it expects.
+        env:
+          GEV_DEPLOY_ROOT: ${{ vars.GEV_DEPLOY_ROOT }}
+          GEV_LAUNCHD_LABEL: ${{ vars.GEV_LAUNCHD_LABEL }}
+        run: ./scripts/homelab-deploy.sh

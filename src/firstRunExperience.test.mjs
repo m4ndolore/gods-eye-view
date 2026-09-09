@@ -15,6 +15,7 @@ import {
   setFirstRunSuppressed,
   shouldShowFirstRun,
 } from './firstRunExperience.js';
+import { hawaiiWorkflowById } from './workflows/hawaiiDeadReckon.js';
 
 function memoryStorage(key, value = null) {
   const values = new Map(value == null ? [] : [[key, value]]);
@@ -395,17 +396,66 @@ function missionSpy({ contextOk = true, layerResult = () => true, globe = async 
   };
 }
 
-test('the menu is the four owner-ordered missions', () => {
+test('the menu is the five owner-ordered missions, dead reckon first', () => {
   // INFRASTRUCTURE was removed after the field tested it: enabling all
   // three bundled layers at once put ~5,700 entities on a full-earth view and
   // tanked the frame rate. The layers stay reachable by hand and by voice; what
   // went is the one-click globe-scale dump. Restoring the tile needs the
   // globe-LOD declutter first.
+  //
+  // DEAD RECKON · OAHU leads the menu because it is what this fork is for. It
+  // is also the cheapest tile on the list — one layer over one island, against
+  // the three-layer globe dump that got INFRASTRUCTURE pulled.
   assert.deepEqual(Object.keys(FIRST_RUN_MISSIONS), [
-    'contacts', 'space-missions', 'environmental', 'explore',
+    'dead-reckon-hawaii', 'contacts', 'space-missions', 'environmental', 'explore',
   ]);
   assert.equal(FIRST_RUN_MISSIONS.infrastructure, undefined,
     'the infrastructure mission must be gone, not dormant');
+});
+
+test('the dead-reckon tile runs a real workflow and declares the layers it drives', async () => {
+  const mission = FIRST_RUN_MISSIONS['dead-reckon-hawaii'];
+  assert.equal(mission.kind, 'workflow');
+  const workflow = hawaiiWorkflowById(mission.workflowId);
+  assert.ok(workflow, 'the tile must name a workflow that exists');
+  // The launcher's declared summary and the runner's actual steps must not be
+  // allowed to drift: one feeds the layer audit, the other feeds the operator.
+  assert.deepEqual([...mission.layerIds].sort(), [...workflow.layerIds].sort());
+});
+
+test('the dead-reckon tile stages the AOR through the app facades', async () => {
+  const spy = missionSpy();
+  const views = [];
+  const outcome = await runFirstRunChoice('dead-reckon-hawaii', {
+    ...spy.deps,
+    flyToLocation: (locationId, poiIndex) => { views.push({ locationId, poiIndex }); return true; },
+  });
+  assert.equal(outcome.ok, true);
+  assert.deepEqual(spy.calls.layerIds, ['flights']);
+  // An AOR mission frames an ISLAND. Pulling out to the globe would throw away
+  // the one thing the tile promised to show.
+  assert.equal(spy.calls.globeFlights, 0);
+  assert.deepEqual(spy.calls.contextModes, []);
+  assert.ok(views.length >= 1 && views.every((view) => view.locationId === 'hawaii'));
+});
+
+test('a dead-reckon tile whose layer will not come up reports which one', async () => {
+  const spy = missionSpy({ layerResult: () => false });
+  const outcome = await runFirstRunChoice('dead-reckon-hawaii', spy.deps);
+  assert.equal(outcome.ok, false);
+  assert.deepEqual(outcome.failedLayerIds, ['flights']);
+  assert.match(outcome.summary, /flights/);
+});
+
+test('the dead-reckon tile never sits out a workflow dwell behind the modal', async () => {
+  // The workflow holds for 45 seconds mid-gap on purpose. That dwell is the
+  // operator's to spend on the map, not the launcher's to spend on a spinner.
+  const spy = missionSpy();
+  const started = Date.now();
+  const outcome = await runFirstRunChoice('dead-reckon-hawaii', { ...spy.deps, flyToLocation: () => true });
+  assert.equal(outcome.ok, true);
+  assert.ok(Date.now() - started < 2000, 'the tile must return immediately');
+  assert.ok(outcome.result.steps.some((step) => step.kind === 'hold' && step.skipped === true));
 });
 
 test('Live Contacts and Space Missions go through the one setContextMode facade', async () => {
@@ -504,8 +554,11 @@ test('no mission writes a preference the visitor did not choose by picking it', 
   const code = module.slice(module.indexOf('export function shouldShowFirstRun'));
 
   // Layer enables ARE durable in this app and a mission tile IS that choice, so
-  // they run at the same origin a click on those rows uses.
-  assert.match(code, /setEnabled\(layerId, true, \{ origin: 'user' \}\)/);
+  // they run at the same origin a click on those rows uses. The facade takes the
+  // target visibility rather than a hardcoded `true` because a workflow step may
+  // ask for a layer OFF; the origin, which is what this assertion guards, does
+  // not move.
+  assert.match(code, /setEnabled\(\s*layerId, enabled !== false, \{ origin: 'user' \},?\s*\)/);
 
   // Detection is owned by the reasonable-defaults landing and, while Contacts is
   // active, by contactsDetectionPolicy. A mission has no opinion on any of it.
@@ -550,7 +603,7 @@ test('markup, startup ordering and accessibility remain pinned', () => {
   const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
 
   assert.match(html, /id="first-run-launcher" role="dialog"[^>]*aria-labelledby="first-run-title"[^>]*hidden/);
-  assert.equal((html.match(/data-first-run-choice=/g) || []).length, 4);
+  assert.equal((html.match(/data-first-run-choice=/g) || []).length, 5);
   assert.match(html, /data-first-run-status[^>]*role="status"[^>]*aria-live="polite"/);
   assert.match(html, /<input type="checkbox" data-first-run-suppress \/>/);
   assert.match(html, /<strong data-first-run-environmental-title>/);
@@ -573,7 +626,7 @@ test('markup, startup ordering and accessibility remain pinned', () => {
 
   // Menu order is the owner's, read straight off the markup.
   const order = [...html.matchAll(/data-first-run-choice="([a-z-]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(order, ['contacts', 'space-missions', 'environmental', 'explore']);
+  assert.deepEqual(order, ['dead-reckon-hawaii', 'contacts', 'space-missions', 'environmental', 'explore']);
   assert.doesNotMatch(html, /data-first-run-choice="infrastructure"/,
     'the removed tile must leave no markup behind');
 

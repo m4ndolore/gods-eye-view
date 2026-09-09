@@ -9685,6 +9685,33 @@ export class StyleManager {
   }
 
   /**
+   * Frame one preset location, exactly as clicking its pill does.
+   *
+   * The public name for _onCityPillClick, so a caller that is NOT a pill — the
+   * first-run workflow missions, and anything else that needs to put an AOR on
+   * screen — gets the whole behaviour (camera, POI row, active-location state,
+   * orbit target) rather than half of it via a bare camera flight.
+   *
+   * @param {string} locationId CITY_POIS key.
+   * @param {number} [poiIndex] POI within that city; 0 is the city's default.
+   * @returns {boolean} false when the location or POI is not one this app has.
+   */
+  focusLocation(locationId, poiIndex = 0) {
+    if (!CITY_POIS[locationId]) return false;
+    if (poiIndex > 0) {
+      if (!CITY_POIS[locationId].pois?.[poiIndex]) return false;
+      this._onPoiClick(locationId, poiIndex);
+      return true;
+    }
+    // A repeat click on the ALREADY expanded city collapses its POI row rather
+    // than flying anywhere — correct for a pill, wrong for "put this AOR on
+    // screen", so the expanded case is re-entered as an explicit POI focus.
+    if (this._expandedCityId === locationId) this._onPoiClick(locationId, 0);
+    else this._onCityPillClick(locationId);
+    return true;
+  }
+
+  /**
    * Release every camera owner and return to the canonical full-globe frame.
    * Repeated requests adopt the in-flight reset rather than cancelling it.
    * @returns {Promise<object>} Canonical reset result shared with voice.

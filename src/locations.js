@@ -105,6 +105,23 @@ export const CITY_POIS = {
       { name: 'Museum of the Future', lat: 25.2197, lon: 55.2806, alt: 350, pitch: -20, heading: 30, buildingHeight: 35 },
     ],
   },
+  hawaii: {
+    name: 'Oahu',
+    // The dead-reckon AOR. Framing here is deliberately WIDER than the city
+    // entries above: these targets are an airfield complex, a harbour entrance
+    // and a channel, read at AOR scale, not landmarks read from across a plaza.
+    // Geometry mirrors HAWAII_AOR in src/workflows/hawaiiDeadReckon.js — edit
+    // both together, and see that module for why this island is the testbed.
+    groundElevation: 5,
+    viewBounds: { southwest: { lat: 21.10, lng: -158.30 }, northeast: { lat: 21.75, lng: -157.60 } },
+    pois: [
+      { name: 'Pearl Harbor · JBPHH', lat: 21.3469, lon: -157.9724, alt: 9000, pitch: -38, heading: 45, buildingHeight: 20 },
+      { name: 'HNL Airport', lat: 21.3187, lon: -157.9225, alt: 6500, pitch: -35, heading: 60, buildingHeight: 25 },
+      { name: 'Pearl Harbor Entrance', lat: 21.2960, lon: -157.9760, alt: 5000, pitch: -32, heading: 0, buildingHeight: 15 },
+      { name: 'Kaneohe Bay · Koolau', lat: 21.4450, lon: -157.7680, alt: 11000, pitch: -30, heading: 225, buildingHeight: 20 },
+      { name: 'Makapuu · Kaiwi Channel', lat: 21.3100, lon: -157.6490, alt: 14000, pitch: -25, heading: 135, buildingHeight: 15 },
+    ],
+  },
   dc: {
     name: 'Washington DC',
     groundElevation: 10,

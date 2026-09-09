@@ -1,0 +1,56 @@
+name: CI
+
+# Node 24 is not a preference here: scripts/run-unit-tests.mjs calibrates two
+# GC-bracketed allocation microbenchmarks against that runtime and SKIPS them
+# on anything else. GEV_REQUIRE_ALLOCATION_GATE turns that skip into a failure,
+# so CI cannot quietly stop measuring the thing it exists to measure.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Unit tests and build
+    runs-on: ubuntu-latest
+    env:
+      # The unit suite is pure ESM under `node --test` and needs no browser.
+      PUPPETEER_SKIP_DOWNLOAD: '1'
+      GEV_REQUIRE_ALLOCATION_GATE: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        # No key is set on purpose. The BUILD must keep succeeding keyless — it
+        # is what a fork and a first clone get, and a build that needs a secret
+        # cannot be checked on a pull request. Note this is a build check only:
+        # the app itself requires GOOGLE_MAPS_API_KEY at RUNTIME (src/main.js
+        # throws without it), which is why the Pages deploy refuses to publish
+        # a keyless bundle. See .github/workflows/deploy.yml.
+        run: npm run build
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: gev-dist-${{ github.sha }}
+          path: dist
+          retention-days: 7

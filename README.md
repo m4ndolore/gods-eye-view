@@ -22,7 +22,7 @@ Photorealistic 3D globe. Live aircraft, ships, satellites, earthquakes, traffic,
 
 <div align="center">
 
-**[Quick Start](#-quick-start) · [First Five Minutes](#-the-first-five-minutes) · [Talk to It](#-talk-to-it) · [What's Live](#-whats-on-the-globe) · [Under the Hood](#-under-the-hood) · [Keys](#-api-keys) · [Costs](#-what-it-actually-costs)**
+**[Dead Reckon · Oahu](#-this-fork-dead-reckon--oahu) · [Quick Start](#-quick-start) · [First Five Minutes](#-the-first-five-minutes) · [Talk to It](#-talk-to-it) · [What's Live](#-whats-on-the-globe) · [Under the Hood](#-under-the-hood) · [Keys](#-api-keys) · [Costs](#-what-it-actually-costs)**
 
 </div>
 
@@ -37,6 +37,42 @@ Most open-source intelligence is a pile of browser tabs. The signals are abundan
 > Half the magic is that it looks like a forbidden cockpit. The other half is that every line of code is inspectable.
 
 The live layers are grounded in public feeds: the airliner crossing your screen is reporting telemetry, the camera is installed at a published location, and the ISS position is propagated from current orbital elements. The client deliberately renders flights one polling interval behind real time so it can interpolate smoothly. Some experiences are modeled rather than live: keyless traffic is labeled as a simulation, camera poses are estimated until calibrated, and launch ascent playback is marked `RECONSTRUCTED ESTIMATE`. Each layer keeps its source and freshness state visible, including partial, delayed, simulated, and unavailable states.
+
+---
+
+## 🧭 This Fork: Dead Reckon · Oahu
+
+This fork points God's Eye View at one question, on one island:
+
+> When the symbol on the map is still moving, is that an **observation** — or is
+> this application propagating a position nobody has heard from in a while?
+
+Oahu is where that question is unavoidable. ADS-B reception is island-anchored,
+so a contact crossing the Kaiwi or Kauai channel leaves receiver line of sight
+entirely. AIS is line-of-sight from shore, and the deep-water approaches to
+Pearl Harbor run out of range. The Koolau spine masks low-altitude traffic from
+the sensors that would otherwise hold it. And reachback is itself a track: the
+island's decision continuity rides a handful of submarine cable landings.
+
+**DEAD RECKON · OAHU** is the first tile on the first-run menu, and there are
+five workflows behind it — each one walking *hold* (establish the truth you will
+propagate) → *gap* (the source stops) → *reacquire* (a second source closes the
+estimate). A validated coast-state vocabulary (`live` / `coasting` / `stale` /
+`lost`, aged per source) keeps a propagated position from ever being presented
+as a fresh one.
+
+Run `npm run hawaii:validate` to check the problem set against the app's live
+layer and location registries. Everything — the workflows, the AOR, the two
+hosting paths (public Pages, or a homelab Mac mini M4) — is written up in
+**[docs/HAWAII-DEAD-RECKON.md](docs/HAWAII-DEAD-RECKON.md)**.
+
+The AOR geometry mirrors the `oahu` site profile in
+[Dead Reckon](https://github.com/m4ndolore/dead-reckon), so a workflow run here
+and a scenario replay there frame the same ground. Same posture, too:
+observation, fusion, training and audit over public feeds — nothing here
+targets, cues a weapon, or asserts an affiliation.
+
+Everything below is upstream God's Eye View, unchanged.
 
 ---
 

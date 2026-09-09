@@ -19,6 +19,9 @@
 // Choosing a mission is deliberately NOT durable suppression: picking a mission
 // is enthusiasm, not "never show me this again".
 
+import { hawaiiWorkflowById } from './workflows/hawaiiDeadReckon.js';
+import { runHawaiiWorkflow, summarizeWorkflowRun } from './workflows/workflowRunner.js';
+
 /** Durable suppression. Written ONLY by the "Don't show this again" checkbox. */
 export const FIRST_RUN_STORAGE_KEY = 'gev:first-run-mission:v1';
 /** Per-session dismissal. Written by every close path; scoped to sessionStorage. */
@@ -87,6 +90,23 @@ export function environmentalLabel(choice = ENVIRONMENTAL_LABEL_CHOICE) {
 
 /** @type {Readonly<Record<string, object>>} */
 export const FIRST_RUN_MISSIONS = Object.freeze({
+  // FIRST, because it is what this fork is FOR. Every other tile stages a view;
+  // this one stages a PROBLEM — an Oahu contact whose position stops being an
+  // observation the moment it leaves island receiver range. See
+  // src/workflows/hawaiiDeadReckon.js for the problem set and why this island.
+  //
+  // The tile runs the workflow's establishing steps and skips its dwells: a
+  // 45-second hold behind a modal card is a hung tile, not an observation. The
+  // brief that says to watch still comes through, and the watching is the
+  // operator's, which is the whole point of the exercise.
+  'dead-reckon-hawaii': Object.freeze({
+    kind: 'workflow',
+    workflowId: 'dr-channel-crossing',
+    // Declared for the launcher's own layer audit; the RUNNER reads the
+    // workflow's steps, and a test pins the two to each other.
+    layerIds: Object.freeze(['flights']),
+    busyText: 'Staging the Oahu dead-reckon AOR…',
+  }),
   contacts: Object.freeze({
     kind: 'context',
     contextMode: 'contacts',
@@ -247,14 +267,33 @@ export function rememberFirstRunSessionDismissed(sessionStorageRef) {
  * @param {string} choice Key of FIRST_RUN_MISSIONS.
  * @param {object} deps
  * @param {(mode: string) => Promise<object>} deps.setContextMode
- * @param {(layerId: string) => Promise<boolean>} deps.setLayerEnabled
+ * @param {(layerId: string, enabled?: boolean) => Promise<boolean>} deps.setLayerEnabled
  * @param {() => Promise<any>} deps.flyToGlobe
+ * @param {(locationId: string, poiIndex: number) => Promise<any>} [deps.flyToLocation]
  * @returns {Promise<{ok: boolean, choice: string, result?: object, failedLayerIds?: string[]}>}
  */
-export async function runFirstRunChoice(choice, { setContextMode, setLayerEnabled, flyToGlobe }) {
+export async function runFirstRunChoice(choice, {
+  setContextMode, setLayerEnabled, flyToGlobe, flyToLocation,
+}) {
   const mission = FIRST_RUN_MISSIONS[choice];
   if (!mission) return { ok: false, choice };
   if (mission.kind === 'none') return { ok: true, choice };
+  if (mission.kind === 'workflow') {
+    // The runner owns step order, the advisory/fatal split, and the verdict.
+    // The facades pass straight through: setLayerEnabled takes (layerId,
+    // enabled) with enabled defaulting to true, which is exactly what the
+    // globe branch below already calls it with.
+    const run = await runHawaiiWorkflow(mission.workflowId, {
+      setContextMode, setLayerEnabled, flyToLocation, skipHolds: true,
+    });
+    return {
+      ok: run.ok,
+      choice,
+      result: run,
+      failedLayerIds: run.failed.map((outcome) => outcome.layerId).filter(Boolean),
+      summary: summarizeWorkflowRun(run),
+    };
+  }
   if (mission.kind === 'context') {
     const result = await setContextMode(mission.contextMode);
     return { ok: Boolean(result?.ok), choice, result };
@@ -453,8 +492,14 @@ export function initFirstRunExperience({
         },
         // `origin: 'user'` on purpose: a mission tile is a real person choosing
         // these layers, so it persists exactly as clicking those rows would.
-        setLayerEnabled: (layerId) => dataManager.setEnabled(layerId, true, { origin: 'user' }),
+        setLayerEnabled: (layerId, enabled = true) => dataManager.setEnabled(
+          layerId, enabled !== false, { origin: 'user' },
+        ),
         flyToGlobe: () => styleManager.resetToGlobeView(),
+        // The AOR framing a workflow step asks for, through the same facade the
+        // visible location pills use — so the pill row, the active-location
+        // state and the camera all land where clicking Oahu would put them.
+        flyToLocation: (locationId, poiIndex) => styleManager.focusLocation?.(locationId, poiIndex),
       });
     } catch (error) {
       // A thrown mission is a real defect worth seeing in a bug report; the

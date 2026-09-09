@@ -159,6 +159,51 @@ export const SCENE_RECIPES = [
       { lat: 5.0, lon: 30.0, alt: 18000000, heading: -8, pitch: -78, roll: 0, duration: 6, hold: 0 },
     ],
   },
+  {
+    // The dead-reckon AOR as a capture: island → channel → island, which is the
+    // same shape as the problem. The camera leaves Oahu with the contact and
+    // comes back, so the footage shows the coverage edge rather than describing
+    // it. Layers and geometry track src/workflows/hawaiiDeadReckon.js.
+    id: 'dead-reckon-oahu',
+    title: 'Dead Reckon · Oahu',
+    durationSec: 30,
+    style: 'surveillance',
+    ui: { hidePanels: true, hudMode: 'full', safeFrame: '16:9' },
+    // Four declared layers, the shipped cap — the director reconciles exactly
+    // what a shot declares and leaves everything else alone. Vessels earn a slot
+    // here that satellites do not: the channel is a two-domain gap.
+    layers: {
+      flights: true,
+      'ais-live-vessels': true,
+      earthquakes: false,
+      traffic: false,
+    },
+    post: {
+      bloom: 55,
+      sharpen: true,
+      detectionMode: 'SPARSE',
+      styleParams: {
+        surveillance: {
+          gain: 0.58,
+          bloom: 0.34,
+          scanlineStr: 0.85,
+          pixelation: 2.0,
+        },
+      },
+    },
+    cameraPath: [
+      // Pearl Harbor / JBPHH complex — where the fixes are observations.
+      { lat: 21.3469, lon: -157.9724, alt: 42000, heading: 45, pitch: -42, roll: 0, duration: 6, hold: 1 },
+      // Out along the south shore toward the harbour approaches.
+      { lat: 21.2960, lon: -157.9760, alt: 26000, heading: 120, pitch: -34, roll: 0, duration: 5, hold: 1 },
+      // Makapuu and the Kaiwi Channel — the edge of island receiver coverage.
+      { lat: 21.3100, lon: -157.6490, alt: 60000, heading: 135, pitch: -28, roll: 0, duration: 5, hold: 1 },
+      // Over the gap itself. Anything still drawn out here is propagated.
+      { lat: 21.2500, lon: -157.5000, alt: 120000, heading: 150, pitch: -35, roll: 0, duration: 5, hold: 1 },
+      // Back across the Koolau spine to the windward side for the re-acquire.
+      { lat: 21.4450, lon: -157.7680, alt: 70000, heading: 250, pitch: -32, roll: 0, duration: 5, hold: 0 },
+    ],
+  },
 ];
 
 export function getSceneRecipeById(id) {

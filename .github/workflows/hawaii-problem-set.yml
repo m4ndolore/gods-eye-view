@@ -1,0 +1,67 @@
+name: Hawaii problem set
+
+# The dead-reckon problem set is DATA — a catalog of workflows that name layers,
+# locations and coast states. Data rots quietly: a layer renamed in the app, a
+# location dropped from CITY_POIS, or a voice enum trimmed would leave a mission
+# that half-runs in front of an operator and reports success.
+#
+# So the catalog is validated against the app's real registries on every change
+# and once a week, because the weekly run is what catches a rot that landed via
+# a change nobody thought touched Hawaii.
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'src/workflows/**'
+      - 'src/locations.js'
+      - 'src/data/layerState.js'
+      - 'src/firstRunExperience.js'
+      - 'src/scenes/recipes.js'
+      - 'vite.config.js'
+      - '.github/workflows/hawaii-problem-set.yml'
+  pull_request:
+    paths:
+      - 'src/workflows/**'
+      - 'src/locations.js'
+      - 'src/data/layerState.js'
+      - 'src/firstRunExperience.js'
+      - 'src/scenes/recipes.js'
+      - 'vite.config.js'
+  schedule:
+    - cron: '17 15 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate the Oahu catalog
+    runs-on: ubuntu-latest
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Workflow, runner and launcher tests
+        run: |
+          node --test \
+            src/workflows/coastState.test.mjs \
+            src/workflows/hawaiiDeadReckon.test.mjs \
+            src/workflows/workflowRunner.test.mjs \
+            src/firstRunExperience.test.mjs \
+            src/scenes/scenePolicy.test.mjs
+
+      - name: Catalog against the live registries
+        # Belt and braces over the tests above: this prints the problem list and
+        # the resulting catalog, so a rot shows up in the log without opening a
+        # test report. Same script a contributor runs locally.
+        run: npm run hawaii:validate
